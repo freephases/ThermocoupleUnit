@@ -100,11 +100,13 @@
       
                       Logger/PID          
 
+Added RoomTemperature via LM35 on port A0 and external leds
+
 ***************************************************************************/
 #include "PlayingWithFusion_MAX31856.h"
 #include "PlayingWithFusion_MAX31856_STRUCT.h"
 #include "SPI.h"
-//#include <OnOff.h>
+#include <OnOff.h>
 
 uint8_t TC0_CS  =  7;
 uint8_t TC1_CS  =  8;
@@ -131,6 +133,11 @@ unsigned long lastReadTcMillis = 0;
 String delimiter(","); 
 #define NaN -9999.99
 
+//control leds, using 3 pin red and green 3mm led with single 220 ohm resister
+OnOff redLed(2);
+OnOff greedLed(3);
+unsigned long greenLedOnMillis = 0;
+
 
 String getValue(String data, char separator, int index)
 {
@@ -151,27 +158,17 @@ String getValue(String data, char separator, int index)
   return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
 
-void setup()
-{
-  delay(1000);                            // give chip a chance to stabilize
-  Serial.begin(115200);                   // set baudrate of serial port
-  // Serial.println("Playing With Fusion: MAX31856, SEN-30007/8");
-  // Serial.println("Continous Mode Example");
-
-  // setup for the the SPI library:
-  SPI.begin();                            // begin SPI
-  SPI.setClockDivider(SPI_CLOCK_DIV16);   // SPI speed to SPI_CLOCK_DIV16 (1MHz)
-  SPI.setDataMode(SPI_MODE3);             // MAX31856 is a MODE3 device
-
-  // call config command... options can be seen in the PlayingWithFusion_MAX31856.h file
-  thermocouple0.MAX31856_config(K_TYPE, CUTOFF_50HZ, AVG_SEL_1SAMP, CMODE_AUTO);
-  thermocouple1.MAX31856_config(K_TYPE, CUTOFF_50HZ, AVG_SEL_1SAMP, CMODE_AUTO);
-  thermocouple2.MAX31856_config(K_TYPE, CUTOFF_50HZ, AVG_SEL_1SAMP, CMODE_AUTO);
-  thermocouple3.MAX31856_config(K_TYPE, CUTOFF_50HZ, AVG_SEL_1SAMP, CMODE_AUTO);
-
-  Serial.println(":?");
-  delay(60);
+//LM35 for room temp
+void printRoomTemperature()
+{ 
+    int val;
+    int dat;
+    val=analogRead(0);//LM35 on Analog 0
+    dat=(500 * val) /1024;
+    Serial.println(":A^"+String(dat));
 }
+
+
 
 void resetTcErrors()
 {
@@ -249,6 +246,7 @@ void processSerial()
 
 void readThermocouples()
 {
+  
   struct var_max31856 *tc_ptr;
 
   // Read CH 0
@@ -365,6 +363,7 @@ void printTemps()
 void printErrors()
 {
   if (tcErrors[0] || tcErrors[1] || tcErrors[2] || tcErrors[3]) {
+    
     String tcS1(tcErrors[0]);
     String res(":E^" + tcS1);//TC 1 always enabled
     
@@ -382,22 +381,61 @@ void printErrors()
     }
 
     Serial.println(res);
+    redLed.on();
+  } else {
+    redLed.off();
   }
 }
 
+void setup()
+{
+  redLed.on();
+  greedLed.on(); 
+  
+  delay(1000);                            // give chip a chance to stabilize
+  Serial.begin(115200);                   // set baudrate of serial port
+  
+  // Serial.println("Playing With Fusion: MAX31856, SEN-30007/8");
+  // Serial.println("Continous Mode Example");
 
+  // setup for the the SPI library:
+  SPI.begin();                            // begin SPI
+  SPI.setClockDivider(SPI_CLOCK_DIV16);   // SPI speed to SPI_CLOCK_DIV16 (1MHz)
+  SPI.setDataMode(SPI_MODE3);             // MAX31856 is a MODE3 device
+
+  // call config command... options can be seen in the PlayingWithFusion_MAX31856.h file
+  thermocouple0.MAX31856_config(K_TYPE, CUTOFF_50HZ, AVG_SEL_1SAMP, CMODE_AUTO);
+  thermocouple1.MAX31856_config(K_TYPE, CUTOFF_50HZ, AVG_SEL_1SAMP, CMODE_AUTO);
+  thermocouple2.MAX31856_config(K_TYPE, CUTOFF_50HZ, AVG_SEL_1SAMP, CMODE_AUTO);
+  thermocouple3.MAX31856_config(K_TYPE, CUTOFF_50HZ, AVG_SEL_1SAMP, CMODE_AUTO);
+  
+  Serial.println(":?");
+  delay(60);
+  redLed.off();
+  readThermocouples();
+  greedLed.off();
+  if (tcErrors[0] || tcErrors[1] || tcErrors[2] || tcErrors[3]) {
+    redLed.on();
+    delay(1000);
+  }
+}
 
 
 void loop()
 {
   processSerial();
-  unsigned long now = millis();
+  unsigned long now = millis(); 
   if (now - lastReadTcMillis > 1000) {
-    lastReadTcMillis = now;
+    greedLed.on();    
     readThermocouples();
     printTemps();
-    //delay(30);
-    printErrors();
+    printErrors();    
+    printRoomTemperature();
+    greenLedOnMillis = now;
+    lastReadTcMillis = now;
   }
-
+  else if (greenLedOnMillis>0 && now-greenLedOnMillis>150) {
+    greedLed.off();
+    greenLedOnMillis = 0;
+  }
 }
